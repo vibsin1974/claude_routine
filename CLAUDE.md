@@ -2,30 +2,21 @@
 
 이 세션이 시작되면 아래 지침에 따라 일일 업무 브리핑을 **즉시** 생성하고 Telegram으로 발송하세요.
 
-## ⏰ 시간대 기준 (중요)
-
-**모든 날짜와 시간은 한국 표준시(KST, UTC+9) 기준으로 처리합니다.**
-
-- `currentDate` 컨텍스트에 제공된 날짜가 오늘(KST)입니다.
-- 이번 주 = `currentDate`가 속한 월요일~일요일
-- 다음 주 = 이번 주 다음 월요일~일요일
-- Google Calendar 조회 시 반드시 `timeZone: "Asia/Seoul"` 지정
-- 이메일 수신 시각은 UTC → KST (+9시간) 변환하여 표시
-- 날짜 경계(자정)는 KST 기준으로 판단
-
-예시: `currentDate`가 2026-06-24(수)이면
-- 이번 주 일정: 2026-06-22T00:00:00+09:00 ~ 2026-06-28T23:59:59+09:00
-- 다음 주 일정: 2026-06-29T00:00:00+09:00 ~ 2026-07-05T23:59:59+09:00
+## ⚠️ 날짜 기준 (필수 확인)
+- **모든 날짜는 한국 표준시(KST, Asia/Seoul, UTC+9) 기준**
+- 실행 전 반드시 현재 KST 날짜를 확인 후 오늘/내일 날짜 변수 설정
+- Calendar 조회: `startTime=오늘T00:00:00+09:00`, `endTime=내일T23:59:59+09:00`
+- 브리핑 헤더에 `YYYY년 MM월 DD일 (요일)` 형식으로 날짜 명시
 
 ---
 
 ## 실행 순서
 
-1. Google Calendar에서 이번 주/다음 주 일정 조회 (`mcp__Google-Calendar__list_events`)
-2. Gmail에서 미읽음 중요 이메일 조회 (`mcp__Gmail__search_threads`)
-3. AI 뉴스 검색 (네이버 뉴스 웹 검색)
-4. 날씨 정보 조회 (웹 검색)
-5. 브리핑 텍스트 생성 (아래 형식 참고)
+1. Google Calendar에서 오늘/내일 일정 조회
+2. Gmail에서 미읽음 이메일 조회 (상세 내용 필요 시 `get_thread` 추가 호출)
+3. 날씨 정보 조회 (`weather_fetch` 도구 사용, 부산 기준)
+4. AI 뉴스 검색 (웹 검색)
+5. 브리핑 텍스트 생성
 6. `python send_telegram.py` 실행하여 Telegram 발송
 7. 결과 보고
 
@@ -33,31 +24,28 @@
 
 ## 1. 일정 (Schedule)
 
-`mcp__Google-Calendar__list_events`를 *두 번* 호출하여 이번 주와 다음 주 일정을 각각 조회합니다.
-
-**(1차 호출 — 이번 주)**
-- `startTime`: 이번 주 월요일 `T00:00:00+09:00`
-- `endTime`: 이번 주 일요일 +1일 `T00:00:00+09:00` (일요일 포함)
-- `timeZone`: `"Asia/Seoul"` 반드시 지정
-
-**(2차 호출 — 다음 주)**
-- `startTime`: 다음 주 월요일 `T00:00:00+09:00`
-- `endTime`: 다음 주 일요일 +1일 `T00:00:00+09:00` (일요일 포함)
-- `timeZone`: `"Asia/Seoul"` 반드시 지정
+`Google Calendar:list_events` 호출 파라미터:
+- `startTime`: 오늘 `00:00:00+09:00`
+- `endTime`: 내일 `23:59:59+09:00`
+- `timeZone`: `Asia/Seoul`
+- `orderBy`: `startTime`
+- `pageSize`: 20
 
 포함 항목:
-- 일정명, 날짜 및 시간(KST), 참석자, 장소 또는 회의 링크
-- 사전 준비 사항, 참고 자료
-
-정렬: 시간순, 이번 주 일정 먼저 → 다음 주 일정
+- 일정명, 날짜 및 시간(KST), 장소 또는 설명
+- 오늘/내일 구분 표시
+- 시간순 정렬, 당일 일정 우선
 
 ---
 
 ## 2. 중요 이메일 (Important Emails)
 
-`mcp__Gmail__search_threads`로 미읽음 이메일 조회 (`query: "is:unread"`, `maxResults: 20`).
+`Gmail:search_threads` 호출 파라미터:
+- `query`: `is:unread in:inbox`
+- `pageSize`: 20
+- `view`: `THREAD_VIEW_MINIMAL`
 
-이메일 수신 시각은 UTC 기준으로 반환되므로 **+9시간 하여 KST로 변환**해서 표시합니다.
+제목만으로 내용 파악이 어려울 경우 `Gmail:get_thread`로 본문 추가 조회.
 
 긴급도 분류:
 - 🔴 긴급: 즉시 응답 필요
@@ -66,30 +54,35 @@
 
 포함 항목: 발신자, 제목, 수신 시각(KST), 핵심 내용 요약, 필요한 조치
 
+이메일이 없으면 섹션 생략.
+
 ---
 
 ## 3. 조치 사항 (Action Items)
 
 이메일 및 일정에서 도출된 할 일 목록.
-
 - 🔴 높음 / 🟠 중간 / 🟢 낮음
-- 작업명, 현재 상태, 마감일, 다음 행동(Next Action)
+- 작업명, 현재 상태, 마감일, Next Action
+
+조치 사항이 없으면 섹션 생략.
 
 ---
 
 ## 4. AI 뉴스 브리핑 (AI News Briefing)
 
-네이버 뉴스에서 최신 AI 관련 기사 5건 검색.
-
+웹 검색으로 최신 AI 관련 기사 5건 조회.
 검색 키워드: `생성형 AI`, `ChatGPT`, `OpenAI`, `Gemini`, `Claude`, `AI Agent`, `AI 자동화`
 
-포함 항목: 기사 제목, 요약(2~3문장), url(기사 링크), 언론사, 게시일
+포함 항목: 기사 제목, 요약(2~3문장), 기사 링크, 언론사, 게시일
 
 ---
 
 ## 5. 날씨 브리핑 (Weather Briefing)
 
-부산 기준 오늘/내일 날씨 조회.
+`weather_fetch` 도구 사용:
+- `location_name`: `부산광역시`
+- `latitude`: `35.1796`
+- `longitude`: `129.0756`
 
 오늘: 현재 기온, 최고/최저 기온, 강수 확률, 습도, 미세먼지, 외출 시 참고사항
 내일: 최고/최저 기온, 강수 확률, 주의사항
@@ -98,17 +91,21 @@
 
 ## 6. 브리핑 작성 규칙
 
+- 브리핑 상단에 날짜 헤더 포함: `📅 YYYY년 MM월 DD일 (요일) 업무 브리핑`
 - 중요도 순 정렬
 - 간결하고 읽기 쉬운 형식
 - 내용 없는 섹션은 생략
 - 전체 분량 3분 이내 읽기 가능
-- Telegram Markdown 호환 형식 사용
+- Telegram Markdown 호환 형식 사용 (`*굵게*`, `` `코드` ``, 이모지 활용)
 
 ---
 
 ## 7. Telegram 발송
 
-브리핑 생성 완료 후 아래 명령 실행:
+브리핑 생성 완료 후 실행:
 
 ```bash
 python send_telegram.py
+```
+
+발송 후 성공/실패 여부 보고.
