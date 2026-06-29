@@ -61,86 +61,13 @@
 
 ## 3. 주식 시황 (Stock Briefing)
 
-아래 Python 코드를 실행한다. **pykrx/yfinance 직접 사용 금지** — 환경 네트워크 제한으로 동작하지 않음.
+아래 명령을 실행하고 출력 결과를 브리핑에 반영한다:
 
-```python
-import requests, xml.etree.ElementTree as ET, os, json
-from datetime import datetime, timedelta
-import pytz
-
-session = requests.Session()
-session.verify = '/root/.ccr/ca-bundle.crt'
-session.headers.update({"User-Agent": "Mozilla/5.0", "Referer": "https://finance.naver.com/"})
-
-# ── 한국 주식: 네이버 금융 XML API ──────────────────────────
-def get_kr_stock(code, name, count=10):
-    url = f"https://fchart.stock.naver.com/sise.nhn?symbol={code}&timeframe=day&count={count}&requestType=0"
-    resp = session.get(url, timeout=15)
-    resp.encoding = 'euc-kr'
-    root = ET.fromstring(resp.text)
-    rows = []
-    for item in root.findall(".//item"):
-        parts = item.get("data", "").split("|")
-        if len(parts) >= 5 and parts[4] and parts[4] != '0':
-            rows.append((datetime.strptime(parts[0], "%Y%m%d"), int(parts[4])))
-    recent = rows[-5:]
-    print(f"\n{name}")
-    for dt, price in recent:
-        print(f"  {dt.strftime('%m/%d')}: {price:,}원")
-    if len(recent) >= 2:
-        chg = (recent[-1][1] - recent[0][1]) / recent[0][1] * 100
-        print(f"  5일 등락: {chg:+.2f}%")
-    return recent
-
-print("=== 한국 주식 (최근 5거래일 종가) ===")
-get_kr_stock("005930", "삼성전자")
-get_kr_stock("034020", "두산에너빌리티")
-
-# ── 미국 주식: yfinance + requests 세션 (curl_cffi 우회) ────
-os.environ['SSL_CERT_FILE'] = '/root/.ccr/ca-bundle.crt'
-os.environ['CURL_CA_BUNDLE'] = '/root/.ccr/ca-bundle.crt'
-import yfinance as yf
-
-yf_session = requests.Session()
-yf_session.verify = '/root/.ccr/ca-bundle.crt'
-yf_session.headers.update({"User-Agent": "Mozilla/5.0"})
-
-print("\n=== 미국 주식 (최근 5거래일 종가) ===")
-for name, ticker in {"NVIDIA": "NVDA"}.items():
-    hist = yf.Ticker(ticker, session=yf_session).history(period="10d")
-    if not hist.empty:
-        recent = hist["Close"].tail(5)
-        print(f"\n{name}")
-        for dt, price in recent.items():
-            print(f"  {dt.strftime('%m/%d')}: ${price:.2f}")
-        chg = (recent.iloc[-1] - recent.iloc[0]) / recent.iloc[0] * 100
-        print(f"  5일 등락: {chg:+.2f}%")
+```bash
+python get_stocks.py
 ```
 
-네이버 뉴스 API로 종목별 최신 뉴스 3건 조회:
-
-```python
-import urllib.request, urllib.parse, json, os
-from dotenv import load_dotenv
-load_dotenv()
-
-CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
-CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
-
-def get_naver_news(query, display=3):
-    enc_query = urllib.parse.quote(query)
-    url = f"https://openapi.naver.com/v1/search/news.json?query={enc_query}&display={display}&sort=date"
-    req = urllib.request.Request(url)
-    req.add_header("X-Naver-Client-Id", CLIENT_ID)
-    req.add_header("X-Naver-Client-Secret", CLIENT_SECRET)
-    return json.loads(urllib.request.urlopen(req).read())["items"]
-
-for kw in ["삼성전자 주가", "두산에너빌리티", "엔비디아 NVIDIA"]:
-    print(f"\n=== {kw} 뉴스 ===")
-    for item in get_naver_news(kw):
-        title = item["title"].replace("<b>","").replace("</b>","")
-        print(f"  {title} | {item['pubDate']}")
-```
+출력 항목: 한국/미국 종목별 최근 5거래일 종가, 5일 등락률, 종목별 최신 뉴스 3건.
 
 ---
 
